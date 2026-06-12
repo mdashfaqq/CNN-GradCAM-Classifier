@@ -6,3 +6,5 @@ All notable changes to this project are documented here.
 
 - **2026-05-27**: feat: add structured logging for debugging and runtime diagnostics
 
+- **2026-06-12**: docs: document API schema, sample payloads, and parameters
+
