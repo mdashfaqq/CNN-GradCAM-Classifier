@@ -10,3 +10,5 @@ All notable changes to this project are documented here.
 
 - **2026-06-14**: test: expand test coverage for error responses and status codes
 
+- **2026-06-14**: refactor: modularize helper functions and improve code readability
+
