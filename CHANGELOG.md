@@ -12,3 +12,5 @@ All notable changes to this project are documented here.
 
 - **2026-06-14**: refactor: modularize helper functions and improve code readability
 
+- **2026-06-15**: test: add unit test assertions for edge cases and input validation
+
