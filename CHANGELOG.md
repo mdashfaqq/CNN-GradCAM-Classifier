@@ -16,3 +16,5 @@ All notable changes to this project are documented here.
 
 - **2026-06-16**: ci: configure workflow check steps and code validation triggers
 
+- **2026-06-20**: docs: add architectural overview notes and component flow details
+
