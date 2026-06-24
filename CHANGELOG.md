@@ -18,3 +18,5 @@ All notable changes to this project are documented here.
 
 - **2026-06-20**: docs: add architectural overview notes and component flow details
 
+- **2026-06-24**: docs: clarify setup steps and environment configuration in README
+
