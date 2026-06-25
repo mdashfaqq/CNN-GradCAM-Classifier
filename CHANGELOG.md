@@ -20,3 +20,5 @@ All notable changes to this project are documented here.
 
 - **2026-06-24**: docs: clarify setup steps and environment configuration in README
 
+- **2026-06-25**: perf: cache intermediate computations to eliminate redundant overhead
+
