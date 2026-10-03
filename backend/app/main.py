@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.ai.gradcam import generate_gradcam
 from app.ai.inference import inference_service
 from app.core.config import settings
-from app.database.database import Base, engine, get_db
+from app.database.database import Base, engine, get_db, SessionLocal
 from app.models.inspection import Inspection
 from app.schemas.inspection import (
     AnalysisResponse,
@@ -30,11 +30,14 @@ from app.schemas.inspection import (
 from app.services.severity import severity_service
 
 # Create database tables (with error handling for missing database)
-try:
-    Base.metadata.create_all(bind=engine)
-except Exception as e:
-    print(f"Warning: Could not create database tables: {e}")
-    print("The application will run in database-less mode if no database is configured.")
+if engine is not None:
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"Warning: Could not create database tables: {e}")
+        print("The application will run in database-less mode if no database is configured.")
+else:
+    print("Database not configured. Application will run in database-less mode.")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -112,7 +115,7 @@ async def analyze_image(
     """
     # Get database session if available
     db = None
-    if 'DATABASE_URL' in os.environ:
+    if SessionLocal is not None:
         try:
             db = next(get_db())
         except:
@@ -235,7 +238,7 @@ async def get_inspections(
     limit: int = 50,
 ):
     """Get list of inspections with pagination."""
-    if 'DATABASE_URL' not in os.environ:
+    if SessionLocal is None:
         return []
 
     try:
@@ -256,7 +259,7 @@ async def get_inspections(
 @app.get("/api/inspections/{inspection_id}", response_model=InspectionResponse)
 async def get_inspection(inspection_id: uuid.UUID):
     """Get inspection by ID."""
-    if 'DATABASE_URL' not in os.environ:
+    if SessionLocal is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Inspection not found",
