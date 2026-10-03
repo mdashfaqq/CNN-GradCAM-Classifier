@@ -1,5 +1,3 @@
-torch>=2.2
-torchvision>=0.17
-matplotlib>=3.8
-numpy>=1.26
-Pillow>=10.0
+# Requirements for Railpack deployment
+# Points to the backend requirements file
+-r backend/requirements.txt
