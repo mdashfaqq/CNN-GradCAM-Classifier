@@ -1,0 +1,24 @@
+# Railpack configuration for AI Visual Inspection Framework
+
+[build]
+# Python version
+python_version = "3.11"
+
+# Dependencies file
+requirements = "backend/requirements.txt"
+
+# Project directory
+project_dir = "backend"
+
+# Start command - explicitly specify the FastAPI app location
+start = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+
+[env]
+# Environment variables
+DATABASE_URL = "${DATABASE_URL}"
+MODEL_PATH = "backend/weights/road_damage_model.pt"
+UPLOAD_DIR = "backend/uploads"
+OUTPUT_DIR = "backend/outputs"
+MAX_UPLOAD_SIZE = "10485760"
+CORS_ORIGINS = "*"
+DEMO_MODE = "true"
