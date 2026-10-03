@@ -1,5 +1,6 @@
 """FastAPI application for AI Visual Inspection Framework."""
 
+import os
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -28,8 +29,12 @@ from app.schemas.inspection import (
 )
 from app.services.severity import severity_service
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
+# Create database tables (with error handling for missing database)
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as e:
+    print(f"Warning: Could not create database tables: {e}")
+    print("The application will run in database-less mode if no database is configured.")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -48,8 +53,11 @@ app.add_middleware(
 )
 
 # Mount static directories for uploads and outputs
-app.mount("/uploads", StaticFiles(directory=str(settings.UPLOAD_DIR)), name="uploads")
-app.mount("/outputs", StaticFiles(directory=str(settings.OUTPUT_DIR)), name="outputs")
+try:
+    app.mount("/uploads", StaticFiles(directory=str(settings.UPLOAD_DIR)), name="uploads")
+    app.mount("/outputs", StaticFiles(directory=str(settings.OUTPUT_DIR)), name="outputs")
+except Exception as e:
+    print(f"Warning: Could not mount static directories: {e}")
 
 # Initialize AI model on startup
 @app.on_event("startup")
@@ -89,7 +97,6 @@ async def analyze_image(
     latitude: Optional[float] = Form(None),
     longitude: Optional[float] = Form(None),
     timestamp: Optional[str] = Form(None),
-    db: Session = Depends(get_db),
 ):
     """Analyze uploaded road damage image.
 
@@ -99,11 +106,17 @@ async def analyze_image(
         latitude: Optional GPS latitude
         longitude: Optional GPS longitude
         timestamp: Optional ISO timestamp
-        db: Database session
 
     Returns:
         AnalysisResponse with prediction, severity, and explanation
     """
+    # Get database session if available
+    db = None
+    if 'DATABASE_URL' in os.environ:
+        try:
+            db = next(get_db())
+        except:
+            pass
     # Validate source
     if source not in ["mobile_camera", "upload", "drone", "video"]:
         raise HTTPException(
@@ -171,7 +184,7 @@ async def analyze_image(
     inspection = Inspection(
         id=inspection_id,
         source=source,
-        image_path=str(image_path.relative_to("backend")),
+        image_path=str(image_path),
         heatmap_path=gradcam_result["heatmap_url"].replace("/api/outputs/", ""),
         overlay_path=gradcam_result["overlay_url"].replace("/api/outputs/", ""),
         prediction_class=prediction_result["class"],
@@ -184,9 +197,15 @@ async def analyze_image(
         input_timestamp=datetime.fromisoformat(timestamp) if timestamp else None,
     )
 
-    db.add(inspection)
-    db.commit()
-    db.refresh(inspection)
+    # Save inspection to database if available
+    if db:
+        try:
+            db.add(inspection)
+            db.commit()
+            db.refresh(inspection)
+        except Exception as e:
+            print(f"Warning: Could not save inspection to database: {e}")
+            # Continue without database persistence
 
     # Build response
     return AnalysisResponse(
@@ -214,37 +233,58 @@ async def analyze_image(
 async def get_inspections(
     skip: int = 0,
     limit: int = 50,
-    db: Session = Depends(get_db),
 ):
     """Get list of inspections with pagination."""
-    inspections = (
-        db.query(Inspection)
-        .order_by(Inspection.created_at.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
-    return inspections
+    if 'DATABASE_URL' not in os.environ:
+        return []
+
+    try:
+        db = next(get_db())
+        inspections = (
+            db.query(Inspection)
+            .order_by(Inspection.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+        return inspections
+    except Exception as e:
+        print(f"Warning: Could not fetch inspections from database: {e}")
+        return []
 
 
 @app.get("/api/inspections/{inspection_id}", response_model=InspectionResponse)
-async def get_inspection(inspection_id: uuid.UUID, db: Session = Depends(get_db)):
+async def get_inspection(inspection_id: uuid.UUID):
     """Get inspection by ID."""
-    inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
-    if not inspection:
+    if 'DATABASE_URL' not in os.environ:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Inspection not found",
         )
-    return inspection
+
+    try:
+        db = next(get_db())
+        inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
+        if not inspection:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Inspection not found",
+            )
+        return inspection
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Warning: Could not fetch inspection from database: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Inspection not found",
+        )
 
 
 @app.get("/api/analytics", response_model=AnalyticsResponse)
-async def get_analytics(db: Session = Depends(get_db)):
+async def get_analytics():
     """Get analytics statistics."""
-    total_inspections = db.query(Inspection).count()
-
-    if total_inspections == 0:
+    if 'DATABASE_URL' not in os.environ:
         return AnalyticsResponse(
             total_inspections=0,
             damaged_roads=0,
@@ -255,71 +295,97 @@ async def get_analytics(db: Session = Depends(get_db)):
             inspections_over_time=[],
         )
 
-    damaged_roads = (
-        db.query(Inspection)
-        .filter(Inspection.prediction_class != "no_damage")
-        .count()
-    )
+    try:
+        db = next(get_db())
+        total_inspections = db.query(Inspection).count()
 
-    high_severity = (
-        db.query(Inspection)
-        .filter(Inspection.severity == "high")
-        .count()
-    )
-
-    avg_confidence_result = db.query(Inspection.confidence).all()
-    average_confidence = sum(c[0] for c in avg_confidence_result) / len(avg_confidence_result)
-
-    # Damage type distribution
-    damage_type_dist = {}
-    for cls in settings.DAMAGE_CLASSES:
-        count = (
-            db.query(Inspection)
-            .filter(Inspection.prediction_class == cls)
-            .count()
-        )
-        if count > 0:
-            damage_type_dist[cls] = count
-
-    # Severity distribution
-    severity_dist = {}
-    for sev in settings.SEVERITY_LEVELS:
-        count = (
-            db.query(Inspection)
-            .filter(Inspection.severity == sev)
-            .count()
-        )
-        if count > 0:
-            severity_dist[sev] = count
-
-    # Inspections over time (last 7 days)
-    from datetime import timedelta
-
-    inspections_over_time = []
-    for i in range(7):
-        date = datetime.utcnow() - timedelta(days=6 - i)
-        count = (
-            db.query(Inspection)
-            .filter(
-                Inspection.created_at >= date.replace(hour=0, minute=0, second=0),
-                Inspection.created_at < (date + timedelta(days=1)).replace(hour=0, minute=0, second=0),
+        if total_inspections == 0:
+            return AnalyticsResponse(
+                total_inspections=0,
+                damaged_roads=0,
+                high_severity=0,
+                average_confidence=0.0,
+                damage_type_distribution={},
+                severity_distribution={},
+                inspections_over_time=[],
             )
+
+        damaged_roads = (
+            db.query(Inspection)
+            .filter(Inspection.prediction_class != "no_damage")
             .count()
         )
-        inspections_over_time.append({
-            "date": date.strftime("%Y-%m-%d"),
-            "count": count,
-        })
 
-    return AnalyticsResponse(
-        total_inspections=total_inspections,
-        damaged_roads=damaged_roads,
-        high_severity=high_severity,
-        average_confidence=round(average_confidence, 3),
-        damage_type_distribution=damage_type_dist,
-        severity_distribution=severity_dist,
-        inspections_over_time=inspections_over_time,
-    )
+        high_severity = (
+            db.query(Inspection)
+            .filter(Inspection.severity == "high")
+            .count()
+        )
+
+        avg_confidence_result = db.query(Inspection.confidence).all()
+        average_confidence = sum(c[0] for c in avg_confidence_result) / len(avg_confidence_result)
+
+        # Damage type distribution
+        damage_type_dist = {}
+        for cls in settings.DAMAGE_CLASSES:
+            count = (
+                db.query(Inspection)
+                .filter(Inspection.prediction_class == cls)
+                .count()
+            )
+            if count > 0:
+                damage_type_dist[cls] = count
+
+        # Severity distribution
+        severity_dist = {}
+        for sev in settings.SEVERITY_LEVELS:
+            count = (
+                db.query(Inspection)
+                .filter(Inspection.severity == sev)
+                .count()
+            )
+            if count > 0:
+                severity_dist[sev] = count
+
+        # Inspections over time (last 7 days)
+        from datetime import timedelta
+
+        inspections_over_time = []
+        for i in range(7):
+            date = datetime.utcnow() - timedelta(days=6 - i)
+            count = (
+                db.query(Inspection)
+                .filter(
+                    Inspection.created_at >= date.replace(hour=0, minute=0, second=0),
+                    Inspection.created_at < (date + timedelta(days=1)).replace(hour=0, minute=0, second=0),
+                )
+                .count()
+            )
+            inspections_over_time.append({
+                "date": date.strftime("%Y-%m-%d"),
+                "count": count,
+            })
+
+        return AnalyticsResponse(
+            total_inspections=total_inspections,
+            damaged_roads=damaged_roads,
+            high_severity=high_severity,
+            average_confidence=round(average_confidence, 3),
+            damage_type_distribution=damage_type_dist,
+            severity_distribution=severity_dist,
+            inspections_over_time=inspections_over_time,
+        )
+    except Exception as e:
+        print(f"Warning: Could not fetch analytics from database: {e}")
+        return AnalyticsResponse(
+            total_inspections=0,
+            damaged_roads=0,
+            high_severity=0,
+            average_confidence=0.0,
+            damage_type_distribution={},
+            severity_distribution={},
+            inspections_over_time=[],
+        )
 
 
 if __name__ == "__main__":

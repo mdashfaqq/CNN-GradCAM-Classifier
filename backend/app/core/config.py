@@ -28,13 +28,16 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:3000"]
 
     # AI Model
-    MODEL_PATH: str = "backend/weights/road_damage_model.pt"
+    MODEL_PATH: str = "weights/road_damage_model.pt"
     MODEL_VERSION: str = "smallresnet-v1"
     DEMO_MODE: bool = True
 
     # File Uploads
-    UPLOAD_DIR: Path = Path("backend/uploads")
-    OUTPUT_DIR: Path = Path("backend/outputs")
+    UPLOAD_DIR: Path = Path("uploads")
+    OUTPUT_DIR: Path = Path("outputs")
+    # Ensure directories exist
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10MB
     ALLOWED_IMAGE_TYPES: List[str] = ["image/jpeg", "image/png", "image/webp"]
     ALLOWED_EXTENSIONS: List[str] = [".jpg", ".jpeg", ".png", ".webp"]
