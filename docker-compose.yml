@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: ai_inspection_db
+    environment:
+      POSTGRES_USER: inspection_user
+      POSTGRES_PASSWORD: inspection_password
+      POSTGRES_DB: ai_inspection
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inspection_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ai_inspection_backend
+    environment:
+      DATABASE_URL: postgresql://inspection_user:inspection_password@postgres:5432/ai_inspection
+      MODEL_PATH: /app/weights/road_damage_model.pt
+      UPLOAD_DIR: /app/uploads
+      OUTPUT_DIR: /app/outputs
+      MAX_UPLOAD_SIZE: 10485760
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+      DEMO_MODE: "true"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./backend/uploads:/app/uploads
+      - ./backend/outputs:/app/outputs
+      - ./backend/weights:/app/weights
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ai_inspection_frontend
+    environment:
+      VITE_API_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    command: npm run dev -- --host 0.0.0.0
+
+volumes:
+  postgres_data:
