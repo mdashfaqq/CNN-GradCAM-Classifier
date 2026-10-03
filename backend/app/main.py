@@ -9,6 +9,7 @@ from typing import Optional
 import aiofiles
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from sqlalchemy.orm import Session
@@ -71,6 +72,12 @@ async def startup_event():
         print("Running in DEMO MODE - model not loaded")
     else:
         print("Model loaded successfully")
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    """Redirect the bare URL to the interactive API docs."""
+    return RedirectResponse(url="/docs")
 
 
 @app.get("/api/health", response_model=HealthResponse)
